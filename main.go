@@ -61,6 +61,9 @@ const usageText = `syncd %s - 单二进制云边文件同步工具（云端 rela
   --settle 3s          文件静默期：写入停止多久后才发布（防止拷贝到一半被同步）
   --exec               开启远程执行（默认关闭；开启后持有 token 的人可在本机执行命令）
   --exec-timeout 60s   --exec 单条命令超时，超时自动杀进程
+  --plain-http         明文 HTTP 模式：给本机 TLS 网关/隧道（如 https://xxx-9410.test-ai.online
+                       这类端口转发服务）转发用，TLS 由网关负责，token 认证不变；
+                       直连场景（IP/四层透传）不要开启
 
 【边缘 client 参数】
   --server token@host[:port]   上游云端（必填，可重复传入多个，连多台云端）
@@ -162,6 +165,7 @@ func cmdRelay(args []string) {
 	settle := fs.Duration("settle", 3*time.Second, "file quiet period before it is published")
 	execEnabled := fs.Bool("exec", false, "allow clients to run commands on this host (enables --exec)")
 	execTimeout := fs.Duration("exec-timeout", defaultExecTout, "per-command timeout for --exec")
+	plainHTTP := fs.Bool("plain-http", false, "serve plain HTTP (for TLS-terminating proxies/tunnels in front of this relay)")
 	svc := addServiceFlags(fs)
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, usageText, version)
@@ -191,6 +195,7 @@ func cmdRelay(args []string) {
 		dataDir:      filepath.Join(executableDir(), ".syncd"),
 		execEnabled:  *execEnabled,
 		execTimeout:  *execTimeout,
+		plainHTTP:    *plainHTTP,
 	}); err != nil {
 		fatal(err)
 	}

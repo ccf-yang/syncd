@@ -40,6 +40,7 @@ type relayOptions struct {
 	execEnabled   bool   // --exec: allow clients to run commands on this host
 	execTimeout   time.Duration
 	execOutputCap int64 // bytes of captured output before a command is killed
+	plainHTTP     bool  // --plain-http: serve HTTP instead of TLS (behind a local TLS-terminating proxy/tunnel)
 }
 
 type cachedHash struct {
@@ -138,16 +139,24 @@ func (r *relayServer) Run(ctx context.Context) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	r.addr = ln.Addr()
-	fp, _ := certFingerprint(r.certFile)
-	log.Printf("[relay] store=%q share=%q listening on %s (tls sha256 %s)",
-		r.opts.store, r.opts.share, ln.Addr(), fp)
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- r.srv.ServeTLS(ln, r.certFile, r.keyFile) }()
-
+	// Scanner must run regardless of serving mode.
 	scanCtx, stopScan := context.WithCancel(ctx)
 	defer stopScan()
 	go r.scanLoop(scanCtx)
+
+	errCh := make(chan error, 1)
+	if r.opts.plainHTTP {
+		log.Printf("[relay] store=%q share=%q listening on %s (PLAIN HTTP mode: "+
+			"TLS must terminate at the proxy/tunnel in front of this port)",
+			r.opts.store, r.opts.share, ln.Addr())
+		go func() { errCh <- r.srv.Serve(ln) }()
+	} else {
+		fp, _ := certFingerprint(r.certFile)
+		log.Printf("[relay] store=%q share=%q listening on %s (tls sha256 %s)",
+			r.opts.store, r.opts.share, ln.Addr(), fp)
+		go func() { errCh <- r.srv.ServeTLS(ln, r.certFile, r.keyFile) }()
+	}
 
 	select {
 	case <-ctx.Done():
